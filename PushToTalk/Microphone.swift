@@ -35,8 +35,21 @@ class Microphone {
     
     func setupDeviceMenu(menu: NSMenu) throws {
         menu.removeAllItems()
-        let devices = try? getInputDevices()
-        for device in devices! {
+        
+        guard let devices = try? getInputDevices(), devices.count != 0 else {
+            let item = DeviceMenuItem()
+            item.title = "No Device"
+            item.isEnabled = false
+            menu.addItem(item)
+            return
+        }
+        
+        // if no previously selected device is found, use the first one
+        if self.selectedInput == nil{
+            self.selectedInput = devices.first
+        }
+        
+        for device in devices {
             // automatically select previously selected device
             if let selectedInput = selectedInput{
                 if selectedInput.uid == device.uid{
@@ -52,10 +65,6 @@ class Microphone {
                 item.state = NSControl.StateValue.on
             }
             menu.addItem(item)
-        }
-        // if no previously selected device is found, use the first one
-        if self.selectedInput == nil{
-            self.selectedInput = devices?.first
         }
     }
     

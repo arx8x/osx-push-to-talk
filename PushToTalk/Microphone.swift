@@ -36,8 +36,13 @@ class Microphone {
     func setupDeviceMenu(menu: NSMenu) throws {
         menu.removeAllItems()
         let devices = try? getInputDevices()
-        self.selectedInput = devices![0]
         for device in devices! {
+            // automatically select previously selected device
+            if let selectedInput = selectedInput{
+                if selectedInput.uid == device.uid{
+                    self.selectedInput = device
+                }
+            }
             let item = DeviceMenuItem()
             item.inputDevice = device
             item.title = device.name
@@ -47,6 +52,10 @@ class Microphone {
                 item.state = NSControl.StateValue.on
             }
             menu.addItem(item)
+        }
+        // if no previously selected device is found, use the first one
+        if self.selectedInput == nil{
+            self.selectedInput = devices?.first
         }
     }
     
@@ -66,6 +75,7 @@ class Microphone {
 struct InputDevice {
     var id: AudioDeviceID = 0
     var name: String = "None"
+    var uid: String = "Unknown"
 }
 
 // MARK - Sound Methods
@@ -104,12 +114,17 @@ extension Microphone {
 
         // Iterate
         for id in deviceIDs {
-
             // Get the device name for fun
             var name: CFString = "" as CFString
             var propertySize = UInt32(MemoryLayout<CFString>.size)
             var deviceNamePropertyAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceNameCFString, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMaster)
             try handle(AudioObjectGetPropertyData(id, &deviceNamePropertyAddress, 0, nil, &propertySize, &name))
+            
+            // get uid to identify device across replugs
+            var serial: CFString = "" as CFString
+            var add: AudioObjectPropertyAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceUID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMaster)
+            try handle(AudioObjectGetPropertyData(id, &add, 0, nil, &propertySize, &serial))
+
 
             // Check the input scope of the device for any channels. That would mean it's an input device
 
@@ -133,8 +148,8 @@ extension Microphone {
 
             // If there are channels, it's an input device
             if channelCount > 0 {
-                Swift.print("Found input device '\(name)' with \(channelCount) channels")
-                inputDevices.append(InputDevice(id: id, name: name as String))
+                Swift.print("Found input device '\(name)' (\(serial)) with \(channelCount) channels")
+                inputDevices.append(InputDevice(id: id, name: name as String, uid: serial as String))
             }
         }
 

@@ -22,11 +22,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     var microphone = Microphone()
     var hotkey: HotKey?
+    var deviceWatcher: AudioObjectPropertyListenerProc?
     
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    
+    func deviceNotification(device: AudioObjectID, address: UInt32, propertyAddress: UnsafePointer<AudioObjectPropertyAddress>, clientData: UnsafeMutableRawPointer?){
+        guard let newDevices = try? microphone.getInputDevices() else {
+            return
+        }
+        for newDevice in newDevices {
+            if newDevice.uid == microphone.selectedInput?.uid {
+                microphone.selectedInput = newDevice
+            }
+        }
+    }
 
+    fileprivate func setupDeviceWatcher() {
+        // closure for callback
+        let listener: AudioObjectPropertyListenerProc = { ( inObjectID, inNumberAddresses, inAddresses, inClientData ) in
+            // convert back to appdelegate instance
+            let appDelegate = Unmanaged<AppDelegate>.fromOpaque(inClientData!).takeUnretainedValue()
+            // call method with data
+            appDelegate.deviceNotification(device: inObjectID, address: inNumberAddresses, propertyAddress: inAddresses, clientData: inClientData)
+            return 1
+        }
+        
+        var address = AudioObjectPropertyAddress( mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement:  kAudioObjectPropertyElementMaster)
+        
+        let status = AudioObjectAddPropertyListener( AudioObjectID(kAudioObjectSystemObject), &address, listener, UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()) )
+        
+        if status != 0 {
+            print("Couldn't add listener: \(status)")
+        } else {
+            print("Device watcher set up")
+            self.deviceWatcher = listener
+        }
+    }
+    
     func applicationDidFinishLaunching(_ aNotification: Notification) {
         
+        setupDeviceWatcher()
+    
         self.hotkey = HotKey(microphone: microphone, menuItem: hotkeyMenuItem)
         
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -56,6 +92,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         self.refreshDevices(nil);
     }
     
+    
+    func applicationWillTerminate(_ notification: Notification) {
+        
+       // This mosst likely won't ever work because background apps are immediately killed
+        guard let deviceWatcher else {
+            return
+        }
+        
+        print("Cleaning up listener")
+        var address = AudioObjectPropertyAddress(
+                    mSelector: kAudioHardwarePropertyDevices,
+                    mScope: kAudioObjectPropertyScopeGlobal,
+                    mElement: kAudioObjectPropertyElementMaster
+                )
+        AudioObjectRemovePropertyListener(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            deviceWatcher,
+            nil
+        )
+    }
     
     // MARK: Menu item Actions
     @IBAction func toggleAction(_ sender: NSMenuItem) {
